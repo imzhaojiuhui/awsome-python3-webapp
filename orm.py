@@ -23,16 +23,6 @@ async def create_pool(loop, **kw):
         loop=loop
     )
 
-'''
-CREATE TABLE IF NOT EXISTS `runoob_tbl`(
-   `runoob_id` INT UNSIGNED AUTO_INCREMENT,
-   `runoob_title` VARCHAR(100) NOT NULL,
-   `runoob_author` VARCHAR(40) NOT NULL,
-   `submission_date` DATE,
-   PRIMARY KEY ( `runoob_id` )
-)ENGINE=InnoDB DEFAULT CHARSET=utf8;
-'''
-
 
 async def select(sql, args, size):
     global __pool
@@ -46,14 +36,13 @@ async def select(sql, args, size):
             return rs
 
 
-async def execute(sql, args):
+async def execute(sql, args=None):
     global __pool
-    with (await __pool) as conn:
-        cur = conn.cursor()
-        cur.execute(sql.replace('?', '%s'), args or ())
-        affected = cur.rowcount
-        await cur.close()
-        return affected
+    async with __pool.get() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(sql.replace('?', '%s'), args or ())
+            affected = cur.rowcount
+            return affected
 
 
 class Field(object):
@@ -98,6 +87,13 @@ class ModelMetaclass(type):
         attrs['__primary_key__'] = primary_key
         attrs['__fields__'] = fields
         attrs['__select__'] = 'select `%s`, %s from `%s`' % (primary_key, escaped_fields, table_name)
+        attrs['__create_table__'] = '''
+        CREATE TABLE IF NOT EXISTS `%s`(
+           `%s` %s,
+           %s,
+           PRIMARY KEY ( `%s` )
+        );
+        ''' % (table_name, primary_key, mappings.get(primary_key).column_type, ','.join(map(lambda f:'`%s` %s'%(f, mappings[f].column_type), fields)) ,primary_key)
         return type.__new__(cls, name, bases, attrs)
 
 
@@ -110,6 +106,10 @@ class Model(dict, metaclass=ModelMetaclass):
             return None
         return cls(rc)
 
+    @classmethod
+    async def create_table(cls):
+        await execute(cls.__create_table__)
+
 
 class User(Model):
     id = StringField(primary_key=True)
@@ -118,6 +118,7 @@ class User(Model):
 
 
 async def test():
+    await User.create_table()
     user = await User.find('1')
     print(user)
 
