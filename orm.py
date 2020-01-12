@@ -1,3 +1,8 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+__author__ = "zhaojh"
+
 from typing import Any
 
 import aiomysql, logging; logging.basicConfig(level=logging.INFO)
@@ -60,6 +65,7 @@ def gen_args_string(num):
 
 
 class Field(object):
+
     def __init__(self, column_type, default, name=None, primary_key=False):
         self.name = name
         self.column_type = column_type
@@ -79,6 +85,18 @@ class IntegerField(Field):
 
     def __init__(self, name=None, primary_key=False, default=0):
         super().__init__('bigint', default, name, primary_key)
+
+
+class FloatField(Field):
+
+    def __init__(self, name = None, default = 0.0):
+        super().__init__('real', default, name)
+
+
+class TextField(Field):
+
+    def __init__(self, name=None, default=None):
+        super().__init__('text', default, name, False)
 
 
 class PrimaryKey(Field):
@@ -107,6 +125,10 @@ class ModelMetaclass(type):
 
         for k in mappings.keys():
             attrs.pop(k)
+
+        if primary_key is None:
+            primary_key = 'id'
+            mappings[primary_key] = PrimaryKey()
 
         escaped_fields = ', '.join(map(lambda f: '`%s`' % f, fields))
         attrs['__table__'] = table_name
@@ -139,7 +161,7 @@ class Model(dict, metaclass=ModelMetaclass):
         await execute(cls.__create_table__)
 
     @classmethod
-    async def refresh_table_stru(cls):
+    async def rebuild_table(cls):
         await execute('drop table if exists `%s`'%cls.__table__)
         await cls.create_table()
 
@@ -173,10 +195,12 @@ class User(Model):
     id = PrimaryKey()
     name = StringField()
     password = StringField()
+    create_at = FloatField()
+    desc = TextField()
 
 
 async def test_setup():
-    await User.refresh_table_stru()
+    await User.rebuild_table()
 
 
 async def test():
@@ -189,7 +213,7 @@ async def test():
 if __name__ == '__main__':
     loop = asyncio.get_event_loop()
     loop.run_until_complete(create_pool(loop, user='root', password='111111', db='awsome_python3_webapp'))
-    # loop.run_until_complete(test_setup())
+    loop.run_until_complete(test_setup())
     tasks = [test()]
     loop.run_until_complete(asyncio.wait(tasks))
     loop.close()
